@@ -119,7 +119,7 @@ def horas_transcurridas_en_turno(fecha: datetime.date, turno: str, ahora: dateti
     Args:
         fecha: Fecha del turno (fecha de inicio del turno)
         turno: Código del turno ("A", "C", "1", "2")
-        ahora: Timestamp actual (debe estar en la zona horaria de la planta)
+        ahora: Timestamp actual (naive datetime en hora local de México)
     
     Returns:
         Horas transcurridas (float)
@@ -128,19 +128,14 @@ def horas_transcurridas_en_turno(fecha: datetime.date, turno: str, ahora: dateti
     start_t = info["start"]
     end_t = info["end"]
     
-    # Asegurar que ahora tiene zona horaria
-    tz = ZoneInfo(config.TIMEZONE)
-    if ahora.tzinfo is None:
-        ahora = ahora.replace(tzinfo=tz)
-    
-    # Crear datetime de inicio del turno en la zona horaria correcta
-    start_dt = datetime.combine(fecha, start_t).replace(tzinfo=tz)
+    # Crear datetime de inicio del turno (naive, hora local)
+    start_dt = datetime.combine(fecha, start_t)
     
     # Si el turno cruza medianoche (start > end), el fin es al día siguiente
     if start_t > end_t:
-        end_dt = datetime.combine(fecha + timedelta(days=1), end_t).replace(tzinfo=tz)
+        end_dt = datetime.combine(fecha + timedelta(days=1), end_t)
     else:
-        end_dt = datetime.combine(fecha, end_t).replace(tzinfo=tz)
+        end_dt = datetime.combine(fecha, end_t)
     
     # Si aún no ha comenzado el turno
     if ahora < start_dt:
@@ -184,11 +179,11 @@ def calcular_tiempo_muerto(df_wclog_f: pd.DataFrame) -> pd.DataFrame:
         
         # Para el último registro de cada workcenter (sin siguiente), calcular hasta ahora
         mask_sin_siguiente = df["timestamp_sig"].isna()
+        # Obtener hora actual de México como naive datetime
         tz = ZoneInfo(config.TIMEZONE)
-        ahora = datetime.now(tz)
-        # Asegurar que los timestamps tienen timezone
-        if df.loc[mask_sin_siguiente, "timestamp"].dt.tz is None:
-            df.loc[mask_sin_siguiente, "timestamp"] = df.loc[mask_sin_siguiente, "timestamp"].dt.tz_localize(tz)
+        ahora = datetime.now(tz).replace(tzinfo=None)
+        
+        # Calcular duración desde el timestamp hasta ahora
         df.loc[mask_sin_siguiente, "duracion_min"] = (
             ahora - df.loc[mask_sin_siguiente, "timestamp"]
         ).dt.total_seconds() / 60
@@ -366,6 +361,9 @@ try:
     df_prod = preparar_datos(df_prod_raw, "prod")
     df_scrap = preparar_datos(df_scrap_raw, "scrap")
     df_wclog = preparar_datos(df_wclog_raw, "wclog")
+    
+    # NO localizar timezone aquí porque los datos YA están en hora de México
+    # Solo necesitamos que datetime.now() use la timezone correcta para comparaciones
     
     # Preparar costs: sumar costo total por Part Number
     df_costs_raw.columns = df_costs_raw.columns.str.strip()
@@ -571,7 +569,8 @@ if datos_cargados and len(wc_sel) > 0:
     # Determinar si el turno cruza medianoche
     turno_nocturno = start_t > end_t
     
-    # Crear timestamps de inicio y fin del turno
+    # Crear timestamps de inicio y fin del turno SIN timezone
+    # Los datos CSV ya están en hora local de México, así que trabajamos todo en naive datetime
     start_dt = datetime.combine(fecha_sel, start_t)
     if turno_nocturno:
         end_dt = datetime.combine(fecha_sel + timedelta(days=1), end_t)
@@ -601,20 +600,23 @@ if datos_cargados and len(wc_sel) > 0:
     # Calcular tiempo muerto primero (necesario para análisis)
     df_wclog_calc = calcular_tiempo_muerto(df_wclog_f)
     
-    # Calcular KPIs usando la hora de la zona horaria de la planta
+    # Calcular KPIs usando la hora local de México
+    # Obtener la hora actual en la zona horaria de la planta
     tz = ZoneInfo(config.TIMEZONE)
-    ahora = datetime.now(tz)
+    ahora_con_tz = datetime.now(tz)
+    # Convertir a naive datetime (sin timezone) para comparar con los datos
+    ahora = ahora_con_tz.replace(tzinfo=None)
     
     # Verificar si el turno ya terminó
     info_turno = SHIFTS[turno_sel]
     start_t = info_turno["start"]
     end_t = info_turno["end"]
-    start_dt = datetime.combine(fecha_sel, start_t).replace(tzinfo=tz)
+    start_dt = datetime.combine(fecha_sel, start_t)
     
     if start_t > end_t:
-        end_dt = datetime.combine(fecha_sel + timedelta(days=1), end_t).replace(tzinfo=tz)
+        end_dt = datetime.combine(fecha_sel + timedelta(days=1), end_t)
     else:
-        end_dt = datetime.combine(fecha_sel, end_t).replace(tzinfo=tz)
+        end_dt = datetime.combine(fecha_sel, end_t)
     
     # Si el turno ya terminó, usar la hora de fin en lugar de ahora
     tiempo_referencia = min(ahora, end_dt)
@@ -961,7 +963,7 @@ if datos_cargados and len(wc_sel) > 0:
             df_timeline["color_status"] = df_timeline["status_clasificado"].apply(lambda x: x["color"])
             df_timeline["orden_status"] = df_timeline["status_clasificado"].apply(lambda x: x["orden"])
             
-            # Ordenar por workcenter y timestamp
+            # Ordenar por workcenter y timestamp (ya tienen timezone de la carga inicial)
             df_timeline = df_timeline.sort_values(["workcenter", "timestamp"]).reset_index(drop=True)
             
             # Crear timestamps de inicio y fin para cada registro
@@ -996,7 +998,9 @@ if datos_cargados and len(wc_sel) > 0:
                     else:
                         # Es el último registro, extender hasta ahora (si estamos en el turno)
                         # o hasta el fin del turno (si el turno ya terminó)
-                        ahora = datetime.now()
+                        # Obtener hora actual de México como naive datetime
+                        tz = ZoneInfo(config.TIMEZONE)
+                        ahora = datetime.now(tz).replace(tzinfo=None)
                         if ahora < end_dt:
                             # Turno aún activo, mostrar hasta ahora
                             ts_fin = ahora
