@@ -10,6 +10,7 @@ from typing import Optional
 import altair as alt
 import config  # Importar configuración externa
 import time as time_module  # Para el sleep
+from zoneinfo import ZoneInfo  # Para manejo de zonas horarias
 
 # ====================================================
 # CONFIGURACIÓN DE LA PÁGINA
@@ -118,7 +119,7 @@ def horas_transcurridas_en_turno(fecha: datetime.date, turno: str, ahora: dateti
     Args:
         fecha: Fecha del turno (fecha de inicio del turno)
         turno: Código del turno ("A", "C", "1", "2")
-        ahora: Timestamp actual
+        ahora: Timestamp actual (debe estar en la zona horaria de la planta)
     
     Returns:
         Horas transcurridas (float)
@@ -127,14 +128,19 @@ def horas_transcurridas_en_turno(fecha: datetime.date, turno: str, ahora: dateti
     start_t = info["start"]
     end_t = info["end"]
     
-    # Crear datetime de inicio del turno
-    start_dt = datetime.combine(fecha, start_t)
+    # Asegurar que ahora tiene zona horaria
+    tz = ZoneInfo(config.TIMEZONE)
+    if ahora.tzinfo is None:
+        ahora = ahora.replace(tzinfo=tz)
+    
+    # Crear datetime de inicio del turno en la zona horaria correcta
+    start_dt = datetime.combine(fecha, start_t).replace(tzinfo=tz)
     
     # Si el turno cruza medianoche (start > end), el fin es al día siguiente
     if start_t > end_t:
-        end_dt = datetime.combine(fecha + timedelta(days=1), end_t)
+        end_dt = datetime.combine(fecha + timedelta(days=1), end_t).replace(tzinfo=tz)
     else:
-        end_dt = datetime.combine(fecha, end_t)
+        end_dt = datetime.combine(fecha, end_t).replace(tzinfo=tz)
     
     # Si aún no ha comenzado el turno
     if ahora < start_dt:
@@ -178,7 +184,11 @@ def calcular_tiempo_muerto(df_wclog_f: pd.DataFrame) -> pd.DataFrame:
         
         # Para el último registro de cada workcenter (sin siguiente), calcular hasta ahora
         mask_sin_siguiente = df["timestamp_sig"].isna()
-        ahora = datetime.now()
+        tz = ZoneInfo(config.TIMEZONE)
+        ahora = datetime.now(tz)
+        # Asegurar que los timestamps tienen timezone
+        if df.loc[mask_sin_siguiente, "timestamp"].dt.tz is None:
+            df.loc[mask_sin_siguiente, "timestamp"] = df.loc[mask_sin_siguiente, "timestamp"].dt.tz_localize(tz)
         df.loc[mask_sin_siguiente, "duracion_min"] = (
             ahora - df.loc[mask_sin_siguiente, "timestamp"]
         ).dt.total_seconds() / 60
@@ -591,19 +601,20 @@ if datos_cargados and len(wc_sel) > 0:
     # Calcular tiempo muerto primero (necesario para análisis)
     df_wclog_calc = calcular_tiempo_muerto(df_wclog_f)
     
-    # Calcular KPIs
-    ahora = datetime.now()
+    # Calcular KPIs usando la hora de la zona horaria de la planta
+    tz = ZoneInfo(config.TIMEZONE)
+    ahora = datetime.now(tz)
     
     # Verificar si el turno ya terminó
     info_turno = SHIFTS[turno_sel]
     start_t = info_turno["start"]
     end_t = info_turno["end"]
-    start_dt = datetime.combine(fecha_sel, start_t)
+    start_dt = datetime.combine(fecha_sel, start_t).replace(tzinfo=tz)
     
     if start_t > end_t:
-        end_dt = datetime.combine(fecha_sel + timedelta(days=1), end_t)
+        end_dt = datetime.combine(fecha_sel + timedelta(days=1), end_t).replace(tzinfo=tz)
     else:
-        end_dt = datetime.combine(fecha_sel, end_t)
+        end_dt = datetime.combine(fecha_sel, end_t).replace(tzinfo=tz)
     
     # Si el turno ya terminó, usar la hora de fin en lugar de ahora
     tiempo_referencia = min(ahora, end_dt)

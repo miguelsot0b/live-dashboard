@@ -34,6 +34,9 @@ SHIFTS = {
 # CONFIGURACIÓN GENERAL
 # ====================================================
 
+# Zona horaria de la planta
+TIMEZONE = "America/Mexico_City"
+
 # Rate de producción por defecto (piezas/hora)
 DEFAULT_RATE = 50
 
