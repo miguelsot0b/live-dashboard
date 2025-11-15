@@ -1025,8 +1025,13 @@ if datos_cargados and len(wc_sel) > 0:
     st.markdown("**⏱️ Timeline de Status por Workcenter**")
     
     if not df_wclog_calc.empty and "Status" in df_wclog_calc.columns:
-        # Preparar datos para la gráfica de timeline (NO filtrar por duración para incluir status actual)
+        # Preparar datos para la gráfica de timeline
+        # FILTRAR: Solo considerar registros con Hours > 0 para mostrar status reales (no cambios instantáneos)
         df_timeline = df_wclog_calc.copy()
+        
+        # Aplicar filtro de Hours > 0 si la columna existe
+        if "Hours" in df_timeline.columns:
+            df_timeline = df_timeline[pd.to_numeric(df_timeline["Hours"], errors="coerce").fillna(0) > 0].copy()
         
         if not df_timeline.empty:
             # Clasificar cada status usando el mapeo de config.py
