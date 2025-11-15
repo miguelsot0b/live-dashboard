@@ -795,36 +795,22 @@ if datos_cargados and len(wc_sel) > 0:
     
     # Identificar paros NO programados y Tiempo Muerto para el KPI de downtime
     if "Status" in df_wclog_calc.columns:
-        # Crear patrón regex para paradas programadas
-        patron_programadas = "|".join(config.PARADAS_PROGRAMADAS_KEYWORDS)
-        # Crear patrón regex para status corriendo
-        patron_corriendo = "|".join(config.STATUS_CORRIENDO_KEYWORDS)
+        # Usar el mapeo de config.py para determinar qué es tiempo muerto
+        def es_tiempo_muerto_status(status):
+            status_str = str(status).strip()
+            
+            # Buscar en el mapeo exacto
+            if status_str in config.STATUS_CATEGORIAS:
+                return config.STATUS_CATEGORIAS[status_str]["es_tiempo_muerto"]
+            
+            # Si no está mapeado, usar el default
+            return config.STATUS_DEFAULT["es_tiempo_muerto"]
         
-        # Tiempo Muerto incluye:
-        # 1. Cualquier status que contenga "T.M." o "tiempo muerto"
-        # 2. Paros NO programados (excluyendo corriendo y paradas programadas)
-        df_tiempo_muerto = df_wclog_calc[
-            (
-                # Incluir explícitamente T.M. (Tiempo Muerto)
-                df_wclog_calc["Status"].str.contains(r"T\.M\.", case=False, na=False, regex=True) |
-                df_wclog_calc["Status"].str.lower().str.contains("tiempo muerto", case=False, na=False, regex=False)
-            ) |
-            (
-                # O incluir paros que NO son corriendo NI paradas programadas
-                ~df_wclog_calc["Status"].str.lower().str.contains(
-                    patron_corriendo,
-                    case=False,
-                    na=False,
-                    regex=True
-                ) &
-                ~df_wclog_calc["Status"].str.lower().str.contains(
-                    patron_programadas,
-                    case=False,
-                    na=False,
-                    regex=True
-                )
-            )
-        ]
+        # Aplicar la función para identificar tiempo muerto
+        df_wclog_calc["es_tiempo_muerto_flag"] = df_wclog_calc["Status"].apply(es_tiempo_muerto_status)
+        
+        # Filtrar solo los que son tiempo muerto
+        df_tiempo_muerto = df_wclog_calc[df_wclog_calc["es_tiempo_muerto_flag"] == True]
         tiempo_muerto_total = df_tiempo_muerto["duracion_min"].sum()
     else:
         tiempo_muerto_total = 0

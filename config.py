@@ -105,7 +105,7 @@ STATUS_CATEGORIAS = {
         "categoria": "⚫ Apagado",
         "color": "#95a5a6",
         "orden": 2,
-        "es_tiempo_muerto": False
+        "es_tiempo_muerto": False  # Apagado NO es tiempo muerto, es estado normal
     },
     "Arranque": {
         "categoria": "🟢 Arranque",
