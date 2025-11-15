@@ -30,6 +30,17 @@ SHIFTS = {
     "2": {"start": (15, 30), "end": (23, 0)},
 }
 
+# Horas máximas de producción por turno (excluyendo comida, breaks, etc.)
+# Estos valores se usan para calcular la meta acumulada correctamente
+HORAS_PRODUCCION_MAXIMAS = {
+    "A": 9.1,           # 9.1 horas productivas
+    "A + TE": 11.25,    # 11.25 horas productivas con tiempo extra
+    "C": 8.0,           # 8.0 horas productivas
+    "C + TE": 11.25,    # 11.25 horas productivas con tiempo extra
+    "1": 7.5,           # 7.5 horas productivas
+    "2": 7.5,           # 7.5 horas productivas
+}
+
 # ====================================================
 # CONFIGURACIÓN GENERAL
 # ====================================================
@@ -75,3 +86,281 @@ STATUS_CORRIENDO_KEYWORDS = [
     "producción",
     "production",
 ]
+
+# ====================================================
+# MAPEO DE STATUS A CATEGORÍAS Y COLORES
+# ====================================================
+# Este mapeo define cómo se clasifican y colorean los diferentes status
+# Formato: "status_exacto": {"categoria": "nombre", "color": "hex", "emoji": "icono"}
+
+STATUS_CATEGORIAS = {
+    # ===== PRODUCCIÓN ACTIVA =====
+    "Idle": {
+        "categoria": "🟡 Idle",
+        "color": "#f1c40f",
+        "orden": 0,
+        "es_tiempo_muerto": False
+    },
+    "Apagado": {
+        "categoria": "⚫ Apagado",
+        "color": "#95a5a6",
+        "orden": 2,
+        "es_tiempo_muerto": False
+    },
+    "Arranque": {
+        "categoria": "🟢 Arranque",
+        "color": "#27ae60",
+        "orden": 3,
+        "es_tiempo_muerto": False
+    },
+    "Producción": {
+        "categoria": "🟢 Producción",
+        "color": "#2ecc71",
+        "orden": 4,
+        "es_tiempo_muerto": False
+    },
+    
+    # ===== PARADAS PROGRAMADAS =====
+    "Comida": {
+        "categoria": "� Comida",
+        "color": "#f39c12",
+        "orden": 6,
+        "es_tiempo_muerto": False
+    },
+    "Cambio Modelo / Producto": {
+        "categoria": "🟡 Cambio Modelo",
+        "color": "#e67e22",
+        "orden": 8,
+        "es_tiempo_muerto": False
+    },
+    "Cambio de Modelo(SMED)": {
+        "categoria": "� Cambio Modelo SMED",
+        "color": "#e67e22",
+        "orden": 8,
+        "es_tiempo_muerto": False
+    },
+    "Excessive Changeover": {
+        "categoria": "🟠 Excessive Changeover",
+        "color": "#d35400",
+        "orden": 10,
+        "es_tiempo_muerto": True
+    },
+    
+    # ===== TIEMPOS MUERTOS =====
+    "T.M. por Producción": {
+        "categoria": "⚠️ T.M. Producción",
+        "color": "#e67e22",
+        "orden": 11,
+        "es_tiempo_muerto": True
+    },
+    "T.M. por  Producción  ": {  # Con espacios extras del CSV
+        "categoria": "⚠️ T.M. Producción",
+        "color": "#e67e22",
+        "orden": 11,
+        "es_tiempo_muerto": True
+    },
+    "T.M. por Calidad": {
+        "categoria": "⚠️ T.M. Calidad",
+        "color": "#e67e22",
+        "orden": 12,
+        "es_tiempo_muerto": True
+    },
+    "T.M.  por Calidad": {  # Con doble espacio del CSV
+        "categoria": "⚠️ T.M. Calidad",
+        "color": "#e67e22",
+        "orden": 12,
+        "es_tiempo_muerto": True
+    },
+    "Defectos de Calidad": {
+        "categoria": "⚠️ T.M. Calidad",
+        "color": "#e67e22",
+        "orden": 12,
+        "es_tiempo_muerto": True
+    },
+    "T.M. Falta de Materiales": {
+        "categoria": "⛔ Falta Material",
+        "color": "#8e44ad",
+        "orden": 12,
+        "es_tiempo_muerto": True
+    },
+    "Falta de Material en Sistema": {
+        "categoria": "⛔ Falta Material",
+        "color": "#8e44ad",
+        "orden": 12,
+        "es_tiempo_muerto": True
+    },
+    "Limite de Scrap": {
+        "categoria": "⚠️ Limite Scrap",
+        "color": "#e67e22",
+        "orden": 12,
+        "es_tiempo_muerto": True
+    },
+    "Falla Servicios Generales Planta": {
+        "categoria": "⚡ Falla Servicios",
+        "color": "#c0392b",
+        "orden": 14,
+        "es_tiempo_muerto": True
+    },
+    
+    # ===== MANTENIMIENTO PREVENTIVO =====
+    "Mtto. Preventivo Extrusión / Acabados": {
+        "categoria": "🔧 Mtto Preventivo",
+        "color": "#3498db",
+        "orden": 16,
+        "es_tiempo_muerto": False
+    },
+    "MTTO Preventivo Equipos Acabados": {
+        "categoria": "🔧 Mtto Preventivo",
+        "color": "#3498db",
+        "orden": 16,
+        "es_tiempo_muerto": False
+    },
+    "MTTO Preventivo Equipos Extrusion": {
+        "categoria": "🔧 Mtto Preventivo",
+        "color": "#3498db",
+        "orden": 16,
+        "es_tiempo_muerto": False
+    },
+    "MTTO Preventivo Herramentales": {
+        "categoria": "🔧 Mtto Preventivo",
+        "color": "#3498db",
+        "orden": 16,
+        "es_tiempo_muerto": False
+    },
+    
+    # ===== MANTENIMIENTO CORRECTIVO - EQUIPO =====
+    "Mtto. Correctivo Equipo": {
+        "categoria": "🔴 Correctivo Equipo",
+        "color": "#e74c3c",
+        "orden": 20,
+        "es_tiempo_muerto": True
+    },
+    "Mtto. Correctivo - Molde": {
+        "categoria": "🔴 Correctivo Molde",
+        "color": "#e74c3c",
+        "orden": 22,
+        "es_tiempo_muerto": True
+    },
+    "Mtto. Correctivo - Prensa": {
+        "categoria": "🔴 Correctivo Prensa",
+        "color": "#c0392b",
+        "orden": 22,
+        "es_tiempo_muerto": True
+    },
+    "Mtto. Correctivo - Pineadora": {
+        "categoria": "🔴 Correctivo Pineadora",
+        "color": "#e74c3c",
+        "orden": 22,
+        "es_tiempo_muerto": True
+    },
+    "Mtto. Correctivo - Bender (Dobladora)": {
+        "categoria": "🔴 Correctivo Bender",
+        "color": "#e74c3c",
+        "orden": 22,
+        "es_tiempo_muerto": True
+    },
+    "Mtto. Correctivo - Cortadora": {
+        "categoria": "🔴 Correctivo Cortadora",
+        "color": "#e74c3c",
+        "orden": 22,
+        "es_tiempo_muerto": True
+    },
+    "Mtto. Correctivo - Hotmel": {
+        "categoria": "� Correctivo Hotmel",
+        "color": "#e74c3c",
+        "orden": 22,
+        "es_tiempo_muerto": True
+    },
+    "Mtto. Correctivo - Pesplice": {
+        "categoria": "🔴 Correctivo Pesplice",
+        "color": "#e74c3c",
+        "orden": 22,
+        "es_tiempo_muerto": True
+    },
+    "Mtto. Correctivo - Poka Yoke": {
+        "categoria": "🔴 Correctivo Poka Yoke",
+        "color": "#e74c3c",
+        "orden": 22,
+        "es_tiempo_muerto": True
+    },
+    "Mtto. Correctivo - Robot": {
+        "categoria": "🔴 Correctivo Robot",
+        "color": "#e74c3c",
+        "orden": 22,
+        "es_tiempo_muerto": True
+    },
+    "Mtto. Correctivo - Transfer": {
+        "categoria": "🔴 Correctivo Transfer",
+        "color": "#e74c3c",
+        "orden": 22,
+        "es_tiempo_muerto": True
+    },
+    "Falla de Poka Yoke": {
+        "categoria": "🔴 Correctivo Poka Yoke",
+        "color": "#e74c3c",
+        "orden": 22,
+        "es_tiempo_muerto": True
+    },
+    
+    # ===== EXTRUSIÓN =====
+    "Setup Extrusión": {
+        "categoria": "🔧 Setup Extrusión",
+        "color": "#3498db",
+        "orden": 30,
+        "es_tiempo_muerto": False
+    },
+    "Pruebas Extrusión": {
+        "categoria": "🔧 Pruebas Extrusión",
+        "color": "#3498db",
+        "orden": 32,
+        "es_tiempo_muerto": False
+    },
+    "Mtto Correctivo Equipo Extrusión": {
+        "categoria": "🔴 Correctivo Extrusión",
+        "color": "#e74c3c",
+        "orden": 34,
+        "es_tiempo_muerto": True
+    },
+    "Correctivo Procesos Extrusión": {
+        "categoria": "🔴 Correctivo Procesos Ext",
+        "color": "#e74c3c",
+        "orden": 38,
+        "es_tiempo_muerto": True
+    },
+    
+    # ===== DADOS Y HERRAMENTALES =====
+    "Dados": {
+        "categoria": "🔧 Dados",
+        "color": "#e74c3c",
+        "orden": 36,
+        "es_tiempo_muerto": True
+    },
+    "Dados(Inactive)": {
+        "categoria": "🔧 Dados Inactivo",
+        "color": "#95a5a6",
+        "orden": 36,
+        "es_tiempo_muerto": False
+    },
+    "Afinacion de dados": {
+        "categoria": "🔧 Afinación Dados",
+        "color": "#3498db",
+        "orden": 36,
+        "es_tiempo_muerto": False
+    },
+    
+    # ===== ACABADOS =====
+    "Setup Acabados": {
+        "categoria": "🔧 Setup Acabados",
+        "color": "#3498db",
+        "orden": 30,
+        "es_tiempo_muerto": False
+    }
+}
+
+# Categoría por defecto para status no mapeados
+STATUS_DEFAULT = {
+    "categoria": "🔴 Paro No Programado",
+    "color": "#e74c3c",
+    "orden": 99,
+    "es_tiempo_muerto": True
+}

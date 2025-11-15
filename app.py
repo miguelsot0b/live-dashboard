@@ -16,7 +16,7 @@ from zoneinfo import ZoneInfo  # Para manejo de zonas horarias
 # CONFIGURACIÓN DE LA PÁGINA
 # ====================================================
 st.set_page_config(
-    page_title="Dashboard Henniges Automotive",
+    page_title="Production Dashboard - Henniges Automotive",
     page_icon="🏭",
     layout="wide",
     initial_sidebar_state="collapsed"  # Sidebar oculto por defecto
@@ -428,20 +428,21 @@ if datos_cargados:
         st.sidebar.warning("No hay fechas disponibles en los datos.")
         fecha_sel = datetime.now().date()
     
-    # Filtro de workcenters
+    # Filtro de workcenters (sin límite de selección)
     # Usar query param si existe
     if "wc" in query_params:
         wc_default = query_params["wc"].split(",") if query_params["wc"] else []
         # Filtrar solo los que existen
         wc_default = [wc for wc in wc_default if wc in workcenters_disponibles]
     else:
-        wc_default = workcenters_disponibles[:config.DEFAULT_MAX_WORKCENTERS] if len(workcenters_disponibles) > 0 else []
+        wc_default = []  # Sin selección por defecto
     
     wc_sel = st.sidebar.multiselect(
         "🏭 Seleccionar Workcenters",
         options=workcenters_disponibles,
         default=wc_default,
-        key="wc_input"
+        key="wc_input",
+        help="Selecciona uno o más workcenters. Puedes seleccionar todos los que necesites."
     )
     
     # Filtro de turno
@@ -481,16 +482,84 @@ if datos_cargados:
     # Configuración de supervisor
     es_supervisor = st.sidebar.checkbox("👤 Soy supervisor", value=False)
     
-    # Usar query param para rate si existe
-    if "rate" in query_params:
-        try:
-            rate_default = int(query_params["rate"])
-        except:
-            rate_default = config.DEFAULT_RATE
-    else:
-        rate_default = config.DEFAULT_RATE
+    # ===== CONFIGURACIÓN DE RATES =====
+    # Variable para controlar si se usan rates individuales
+    mismo_rate = True  # Por defecto, mismo rate para todos
     
-    if es_supervisor:
+    # Si hay 2 o más workcenters seleccionados, ofrecer rates individuales
+    if len(wc_sel) >= 2 and es_supervisor:
+        st.sidebar.markdown("### 🎯 Configuración de Rates")
+        
+        # Checkbox para rate único
+        mismo_rate = st.sidebar.checkbox(
+            "¿Todos los productos tienen el mismo rate?",
+            value=True,
+            help="Si todos los workcenters/productos tienen el mismo rate, marca esta opción"
+        )
+        
+        if mismo_rate:
+            # Rate único para todos
+            if "rate" in query_params:
+                try:
+                    rate_default = int(query_params["rate"])
+                except:
+                    rate_default = config.DEFAULT_RATE
+            else:
+                rate_default = config.DEFAULT_RATE
+            
+            rate_objetivo = st.sidebar.number_input(
+                "🎯 Rate Objetivo para Todos (pzas/hora)",
+                min_value=1,
+                max_value=1000,
+                value=rate_default,
+                step=1,
+                help="Rate único aplicado a todos los workcenters seleccionados"
+            )
+            # Crear diccionario con el mismo rate para todos
+            rates_por_wc = {wc: rate_objetivo for wc in wc_sel}
+        else:
+            # Rates individuales por workcenter/producto
+            st.sidebar.markdown("**Rates por Workcenter/Producto:**")
+            st.sidebar.caption("💡 Para celdas compartidas, ingresa el rate total (suma de todos los productos)")
+            rates_por_wc = {}
+            
+            # Intentar cargar rates desde query params
+            rates_guardados = {}
+            if "rates" in query_params:
+                try:
+                    # Formato: "WC1:50,WC2:60,WC3:70"
+                    for item in query_params["rates"].split(","):
+                        if ":" in item:
+                            wc, rate = item.split(":")
+                            rates_guardados[wc] = int(rate)
+                except:
+                    pass
+            
+            for wc in wc_sel:
+                rate_default_wc = rates_guardados.get(wc, config.DEFAULT_RATE)
+                rates_por_wc[wc] = st.sidebar.number_input(
+                    f"📊 {wc}",
+                    min_value=1,
+                    max_value=1000,
+                    value=rate_default_wc,
+                    step=1,
+                    key=f"rate_{wc}",
+                    help=f"Rate total para {wc}. Si corre múltiples productos, ingresa la suma (ej: 45+36=81)"
+                )
+            
+            # La suma total de todos los rates es la meta combinada
+            rate_objetivo = sum(rates_por_wc.values()) if rates_por_wc else config.DEFAULT_RATE
+    
+    elif len(wc_sel) == 1 and es_supervisor:
+        # Un solo workcenter seleccionado
+        if "rate" in query_params:
+            try:
+                rate_default = int(query_params["rate"])
+            except:
+                rate_default = config.DEFAULT_RATE
+        else:
+            rate_default = config.DEFAULT_RATE
+        
         rate_objetivo = st.sidebar.number_input(
             "🎯 Rate Objetivo (pzas/hora)",
             min_value=1,
@@ -499,21 +568,42 @@ if datos_cargados:
             step=1,
             help="Define el rate de producción objetivo en piezas por hora"
         )
+        rates_por_wc = {wc_sel[0]: rate_objetivo}
+    
     else:
+        # No es supervisor o no hay workcenters seleccionados
+        if "rate" in query_params:
+            try:
+                rate_default = int(query_params["rate"])
+            except:
+                rate_default = config.DEFAULT_RATE
+        else:
+            rate_default = config.DEFAULT_RATE
+        
         rate_objetivo = rate_default
-        st.sidebar.info(f"📊 Rate objetivo: {rate_objetivo} pzas/hora")
+        rates_por_wc = {wc: rate_objetivo for wc in wc_sel} if wc_sel else {}
+        
+        if wc_sel:
+            st.sidebar.info(f"📊 Rate objetivo: {rate_objetivo} pzas/hora")
     
     st.sidebar.markdown("---")
     
     # Botón para aplicar configuración y activar auto-refresh
     if st.sidebar.button("✅ Aplicar y Activar Auto-Refresh", use_container_width=True, type="primary"):
-        # Actualizar query parameters con la configuración actual
-        st.query_params.update({
+        # Preparar query parameters
+        query_params_update = {
             "fecha": fecha_sel.strftime("%Y-%m-%d"),
             "wc": ",".join(wc_sel),
             "turno": turno_sel,
             "rate": str(rate_objetivo)
-        })
+        }
+        
+        # Si hay rates individuales, guardarlos
+        if len(wc_sel) >= 2 and es_supervisor and not mismo_rate:
+            rates_str = ",".join([f"{wc}:{rate}" for wc, rate in rates_por_wc.items()])
+            query_params_update["rates"] = rates_str
+        
+        st.query_params.update(query_params_update)
         st.rerun()
     
     # Botón para forzar recarga manual
@@ -548,6 +638,7 @@ else:
     turno_sel = "A"
     turno_sel_display = "A (07:30 - 17:06)"
     rate_objetivo = config.DEFAULT_RATE
+    rates_por_wc = {}
 
 # ====================================================
 # TÍTULO PRINCIPAL
@@ -555,6 +646,19 @@ else:
 
 st.markdown("<h3 style='text-align: center; margin: 0px; padding: 5px;'>🏭 Dashboard Henniges Automotive</h3>", unsafe_allow_html=True)
 st.markdown(f"<p style='text-align: center; margin: 0px; padding: 0px; font-size: 14px;'>📅 {fecha_sel} | ⏰ {turno_sel_display} | 🏭 {', '.join(wc_sel[:2]) if wc_sel else 'N/A'}{' +' + str(len(wc_sel)-2) if len(wc_sel) > 2 else ''}</p>", unsafe_allow_html=True)
+
+# Mostrar rates por workcenter si hay múltiples seleccionados con rates diferentes
+if len(wc_sel) >= 2 and rates_por_wc:
+    # Verificar si los rates son diferentes
+    rates_unicos = set(rates_por_wc.values())
+    if len(rates_unicos) > 1:
+        # Rates diferentes, mostrar cada uno y el total
+        rates_info = " | ".join([f"{wc}: {rate}" for wc, rate in sorted(rates_por_wc.items())])
+        total_rate = sum(rates_por_wc.values())
+        st.markdown(f"<p style='text-align: center; margin: 0px; padding: 2px; font-size: 12px; color: #666;'>🎯 Rates: {rates_info} | <strong>Total: {total_rate} pzas/h</strong></p>", unsafe_allow_html=True)
+    else:
+        # Mismo rate para todos
+        st.markdown(f"<p style='text-align: center; margin: 0px; padding: 2px; font-size: 12px; color: #666;'>🎯 Rate: {rate_objetivo} pzas/h (todos los workcenters)</p>", unsafe_allow_html=True)
 
 # ====================================================
 # CÁLCULOS Y FILTRADO DE DATOS
@@ -622,8 +726,29 @@ if datos_cargados and len(wc_sel) > 0:
     tiempo_referencia = min(ahora, end_dt)
     turno_activo = ahora < end_dt and ahora >= start_dt
     
-    horas_turno = horas_transcurridas_en_turno(fecha_sel, turno_sel, tiempo_referencia)
-    meta_acumulada = rate_objetivo * horas_turno
+    # Obtener horas máximas de producción del turno
+    horas_maximas = config.HORAS_PRODUCCION_MAXIMAS.get(turno_sel, 8.0)
+    
+    # Calcular horas para la meta
+    if turno_activo:
+        # Turno en progreso: calcular proporción de avance
+        horas_transcurridas = horas_transcurridas_en_turno(fecha_sel, turno_sel, tiempo_referencia)
+        duracion_total_turno = (end_dt - start_dt).total_seconds() / 3600
+        proporcion_avance = horas_transcurridas / duracion_total_turno if duracion_total_turno > 0 else 0
+        
+        # Aplicar proporción a las horas máximas de producción
+        horas_turno = horas_maximas * proporcion_avance
+    else:
+        # Turno finalizado o no iniciado
+        if ahora >= end_dt:
+            horas_turno = horas_maximas  # Usar capacidad máxima completa
+        else:
+            horas_turno = 0.0
+    
+    # Calcular meta acumulada
+    # Meta = Rate objetivo × Horas productivas
+    # Ejemplo: 35 pph × 9.1 horas = 318.5 piezas (se redondea a 319)
+    meta_acumulada = round(rate_objetivo * horas_turno)
     
     # Actualizar indicador de estado del turno
     if turno_activo:
@@ -904,59 +1029,25 @@ if datos_cargados and len(wc_sel) > 0:
         df_timeline = df_wclog_calc.copy()
         
         if not df_timeline.empty:
-            # Crear patrón regex para identificar paradas programadas
-            patron = "|".join(config.PARADAS_PROGRAMADAS_KEYWORDS)
-            
-            # Clasificar cada status con más detalle (colores e iconos)
+            # Clasificar cada status usando el mapeo de config.py
             def clasificar_status_detallado(status):
-                status_lower = str(status).lower()
+                status_str = str(status).strip()
                 
-                # Producción (Verde)
-                if any(keyword in status_lower for keyword in ["producción", "production", "corriendo", "running"]):
-                    return {"tipo": "🟢 Producción", "color": "#2ecc71", "orden": 1}
+                # Buscar en el mapeo exacto primero
+                if status_str in config.STATUS_CATEGORIAS:
+                    cat = config.STATUS_CATEGORIAS[status_str]
+                    return {
+                        "tipo": cat["categoria"],
+                        "color": cat["color"],
+                        "orden": cat["orden"]
+                    }
                 
-                # Arranque (Verde claro)
-                elif "arranque" in status_lower or "idle" in status_lower:
-                    return {"tipo": "🟢 Arranque/Idle", "color": "#27ae60", "orden": 2}
-                
-                # Paradas Programadas (Amarillo/Naranja)
-                elif "comida" in status_lower or "lunch" in status_lower:
-                    return {"tipo": "🟡 Comida", "color": "#f39c12", "orden": 3}
-                elif "break" in status_lower or "clockout" in status_lower:
-                    return {"tipo": "🟡 Break", "color": "#e67e22", "orden": 4}
-                elif "cambio" in status_lower and "modelo" in status_lower:
-                    return {"tipo": "🟡 Cambio Modelo", "color": "#f39c12", "orden": 5}
-                elif "preventivo" in status_lower:
-                    return {"tipo": "🔧 Mtto Preventivo", "color": "#3498db", "orden": 6}
-                
-                # Mantenimiento Correctivo (Rojo)
-                elif "correctivo" in status_lower:
-                    if "molde" in status_lower:
-                        return {"tipo": "🔴 Correctivo Molde", "color": "#e74c3c", "orden": 7}
-                    elif "prensa" in status_lower:
-                        return {"tipo": "🔴 Correctivo Prensa", "color": "#c0392b", "orden": 8}
-                    elif "extrusión" in status_lower or "extrusion" in status_lower:
-                        return {"tipo": "🔴 Correctivo Extrusión", "color": "#e74c3c", "orden": 9}
-                    else:
-                        return {"tipo": "🔴 Correctivo Equipo", "color": "#e74c3c", "orden": 10}
-                
-                # Tiempos Muertos específicos (Rojo oscuro)
-                elif "falta" in status_lower and "material" in status_lower:
-                    return {"tipo": "⛔ Falta Material", "color": "#8e44ad", "orden": 11}
-                elif "calidad" in status_lower:
-                    return {"tipo": "⚠️ T.M. Calidad", "color": "#e67e22", "orden": 12}
-                elif "servicios" in status_lower:
-                    return {"tipo": "⚡ Falla Servicios", "color": "#c0392b", "orden": 13}
-                elif "dados" in status_lower:
-                    return {"tipo": "🔧 Dados", "color": "#e74c3c", "orden": 14}
-                
-                # Apagado (Gris)
-                elif "apagado" in status_lower:
-                    return {"tipo": "⚫ Apagado", "color": "#95a5a6", "orden": 15}
-                
-                # Otros paros no programados (Rojo)
-                else:
-                    return {"tipo": "🔴 Paro No Programado", "color": "#e74c3c", "orden": 16}
+                # Si no se encuentra, usar la categoría por defecto
+                return {
+                    "tipo": config.STATUS_DEFAULT["categoria"],
+                    "color": config.STATUS_DEFAULT["color"],
+                    "orden": config.STATUS_DEFAULT["orden"]
+                }
             
             df_timeline["status_clasificado"] = df_timeline["Status"].apply(clasificar_status_detallado)
             df_timeline["tipo_status"] = df_timeline["status_clasificado"].apply(lambda x: x["tipo"])
@@ -1043,56 +1134,16 @@ if datos_cargados and len(wc_sel) > 0:
             df_gantt = pd.DataFrame(registros_expandidos)
             
             if not df_gantt.empty:
-                # Aplicar clasificación detallada a los registros expandidos
+                # Aplicar clasificación detallada a los registros expandidos usando el mapeo
                 def clasificar_status_detallado_gantt(status):
-                    status_lower = str(status).lower()
+                    status_str = str(status).strip()
                     
-                    # Producción (Verde)
-                    if any(keyword in status_lower for keyword in ["producción", "production", "corriendo", "running"]):
-                        return "🟢 Producción"
+                    # Buscar en el mapeo exacto primero
+                    if status_str in config.STATUS_CATEGORIAS:
+                        return config.STATUS_CATEGORIAS[status_str]["categoria"]
                     
-                    # Arranque (Verde claro)
-                    elif "arranque" in status_lower or "idle" in status_lower:
-                        return "🟢 Arranque/Idle"
-                    
-                    # Paradas Programadas (Amarillo/Naranja)
-                    elif "comida" in status_lower or "lunch" in status_lower:
-                        return "🟡 Comida"
-                    elif "break" in status_lower or "clockout" in status_lower:
-                        return "🟡 Break"
-                    elif "cambio" in status_lower and "modelo" in status_lower:
-                        return "🟡 Cambio Modelo"
-                    elif "preventivo" in status_lower:
-                        return "🔧 Mtto Preventivo"
-                    
-                    # Mantenimiento Correctivo (Rojo)
-                    elif "correctivo" in status_lower:
-                        if "molde" in status_lower:
-                            return "🔴 Correctivo Molde"
-                        elif "prensa" in status_lower:
-                            return "🔴 Correctivo Prensa"
-                        elif "extrusión" in status_lower or "extrusion" in status_lower:
-                            return "🔴 Correctivo Extrusión"
-                        else:
-                            return "🔴 Correctivo Equipo"
-                    
-                    # Tiempos Muertos específicos
-                    elif "falta" in status_lower and "material" in status_lower:
-                        return "⛔ Falta Material"
-                    elif "calidad" in status_lower:
-                        return "⚠️ T.M. Calidad"
-                    elif "servicios" in status_lower:
-                        return "⚡ Falla Servicios"
-                    elif "dados" in status_lower:
-                        return "🔧 Dados"
-                    
-                    # Apagado (Gris)
-                    elif "apagado" in status_lower:
-                        return "⚫ Apagado"
-                    
-                    # Otros paros no programados (Rojo)
-                    else:
-                        return "🔴 Paro No Programado"
+                    # Si no se encuentra, usar la categoría por defecto
+                    return config.STATUS_DEFAULT["categoria"]
                 
                 df_gantt["tipo_status_detallado"] = df_gantt["Status"].apply(clasificar_status_detallado_gantt)
                 
@@ -1103,25 +1154,12 @@ if datos_cargados and len(wc_sel) > 0:
                 # Obtener solo las categorías que están presentes en los datos
                 categorias_presentes = df_gantt["tipo_status_detallado"].unique().tolist()
                 
-                # Mapeo completo de categorías a colores
-                mapeo_colores = {
-                    "🟢 Producción": "#2ecc71",
-                    "🟢 Arranque/Idle": "#27ae60",
-                    "🟡 Comida": "#f39c12",
-                    "🟡 Break": "#e67e22",
-                    "🟡 Cambio Modelo": "#f39c12",
-                    "🔧 Mtto Preventivo": "#3498db",
-                    "🔧 Dados": "#e74c3c",
-                    "🔴 Correctivo Molde": "#e74c3c",
-                    "🔴 Correctivo Prensa": "#c0392b",
-                    "🔴 Correctivo Extrusión": "#e74c3c",
-                    "🔴 Correctivo Equipo": "#e74c3c",
-                    "⛔ Falta Material": "#8e44ad",
-                    "⚠️ T.M. Calidad": "#e67e22",
-                    "⚡ Falla Servicios": "#c0392b",
-                    "⚫ Apagado": "#95a5a6",
-                    "🔴 Paro No Programado": "#e74c3c"
-                }
+                # Crear mapeo de colores desde config.py
+                mapeo_colores = {}
+                for status_key, status_data in config.STATUS_CATEGORIAS.items():
+                    mapeo_colores[status_data["categoria"]] = status_data["color"]
+                # Agregar el default
+                mapeo_colores[config.STATUS_DEFAULT["categoria"]] = config.STATUS_DEFAULT["color"]
                 
                 # Filtrar solo los colores de las categorías presentes
                 colores_presentes = [mapeo_colores[cat] for cat in categorias_presentes if cat in mapeo_colores]
