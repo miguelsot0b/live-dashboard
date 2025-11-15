@@ -1067,8 +1067,8 @@ if datos_cargados and len(wc_sel) > 0:
                             "workcenter": wc,
                             "timestamp_inicio": inicio_turno_wc,
                             "timestamp_fin": ts_inicio,
-                            "tipo_status": "Paro No Programado",
-                            "Status": "Apagado (inicio)",
+                            "tipo_status": row["tipo_status"],  # Usar el tipo del primer registro
+                            "Status": "Apagado",  # Status real, no artificial
                             "duracion_min": (ts_inicio - inicio_turno_wc).total_seconds() / 60
                         })
                     
